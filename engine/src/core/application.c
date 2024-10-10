@@ -1,5 +1,7 @@
 #include <core/application.h>
 
+#include <core/event.h>
+#include <core/input.h>
 #include <core/logger.h>
 #include <core/vmemory.h>
 #include <game_types.h>
@@ -20,6 +22,12 @@ typedef struct application_state {
 
 static b8 is_initialized = FALSE;
 static application_state app_state;
+
+b8 application_on_event(u16 code, void *sender, void *listener_instance,
+                        event_context context);
+
+b8 application_on_key(u16 code, void *sender, void *listener_instance,
+                      event_context context);
 
 b8 application_init(game *game_instance) {
   if (is_initialized) {
@@ -51,6 +59,20 @@ b8 application_init(game *game_instance) {
     VERROR("Failed to initialize logger.");
     return FALSE;
   }
+
+  if (events_init()) {
+    VINFO("Event system initialized successfully.");
+  } else {
+    VERROR("Failed to initialize event system.");
+    return FALSE;
+  }
+
+  input_init();
+  VINFO("Input system initialized.");
+
+  event_register(EVENT_CODE_APPLICATION_QUIT, NULL, application_on_event);
+  event_register(EVENT_CODE_KEY_PRESSED, NULL, application_on_key);
+  event_register(EVENT_CODE_KEY_RELEASED, NULL, application_on_key);
 
   // TODO: Remove these messages.
   VFATAL("A test fatal log message: %d", 42);
@@ -99,10 +121,26 @@ b8 application_run() {
         app_state.is_running = FALSE;
         break;
       }
+
+      // NOTE: Input update/state copying should always be handleled
+      // after any input should be recorded; I.E. before this line.
+      // As a safety, input is the last thing to be updated before
+      // the next frame.
+      input_update(0.0f);
     }
   }
 
   app_state.is_running = FALSE;
+
+  event_unregister(EVENT_CODE_APPLICATION_QUIT, NULL, application_on_event);
+  event_unregister(EVENT_CODE_KEY_PRESSED, NULL, application_on_key);
+  event_unregister(EVENT_CODE_KEY_RELEASED, NULL, application_on_key);
+
+  input_shutdown();
+  VINFO("Input system shutdown.");
+
+  events_shutdown();
+  VINFO("Event system shutdown.");
 
   logger_shutdown();
   VINFO("Logger shutdown.");
@@ -111,4 +149,47 @@ b8 application_run() {
   VINFO("Platform shutdown.");
 
   return TRUE;
+}
+
+b8 application_on_event(u16 code, void *sender, void *listener_instance,
+                        event_context context) {
+  switch (code) {
+  case EVENT_CODE_APPLICATION_QUIT:
+    VINFO("Application quit event received. Shutting down.");
+    app_state.is_running = FALSE;
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+b8 application_on_key(u16 code, void *sender, void *listener_instance,
+                      event_context context) {
+  if (code == EVENT_CODE_KEY_PRESSED) {
+    keys key = (keys)context.data.u16[0];
+
+    if (key == KEY_ESCAPE) {
+      // NOTE: Technically firing an event to itself, but there might be many
+      // different listener instances.
+      event_context ctx = {};
+      event_fire(EVENT_CODE_APPLICATION_QUIT, NULL, ctx);
+
+      // Return TRUE to indicate that the event was handled.
+      return TRUE;
+    } else if (key == KEY_A) {
+      VDEBUG("[EXPLICIT] Key A was pressed.");
+    } else {
+      VDEBUG("Key %c was pressed.", key);
+    }
+  } else if (code == EVENT_CODE_KEY_RELEASED) {
+    keys key = (keys)context.data.u16[0];
+
+    if (key == KEY_B) {
+      VDEBUG("[EXPLICIT] Key B was released.");
+    } else {
+      VDEBUG("Key %c was released.", key);
+    }
+  }
+
+  return FALSE;
 }

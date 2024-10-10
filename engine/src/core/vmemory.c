@@ -1,11 +1,10 @@
 #include <core/vmemory.h>
 
 #include <core/logger.h>
+#include <core/vstring.h>
 #include <platform/platform.h>
 
-// TODO: Custom string library.
 #include <stdio.h>
-#include <string.h>
 
 typedef struct memory_stats {
   u64 total_allocated;
@@ -72,7 +71,7 @@ char *get_memory_usage_string() {
   const u64 kib = 1024;
 
   char buffer[8192] = "System memory usage (tagged):\n";
-  u64 offset = strlen(buffer);
+  u64 offset = vstrlen(buffer);
 
   for (u32 i = 0; i < MEMORY_TAG_MAX_COUNT; ++i) {
     char unit[4] = "xiB";
@@ -97,8 +96,6 @@ char *get_memory_usage_string() {
                       amount, unit);
   }
 
-  char *out_string = vallocate(strlen(buffer) + 1, MEMORY_TAG_STRING);
-  vcopy_memory(out_string, buffer, strlen(buffer) + 1);
-
+  char *out_string = vstrdup(buffer);
   return out_string;
 }

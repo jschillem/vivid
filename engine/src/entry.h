@@ -43,5 +43,7 @@ int main(void) {
 
   memory_shutdown();
 
+  vfree(game_instance.state, );
+
   return 0;
 }
