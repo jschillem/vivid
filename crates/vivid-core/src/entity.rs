@@ -53,8 +53,8 @@ impl Entity {
 ///
 /// INVARIANT: `generations[i]` holds the generation of the currently-alive
 /// entity at index `i`, OR (if `i` is dead / on the free list) the generation
-/// that the NEXT entity born at `i` will receive. Generations are bumpled at
-/// DEATH, in [`Entities::deallocate`]. Therefore [`Entities::is_alive`] needs
+/// that the **NEXT** entity born at `i` will receive. Generations are bumpled at
+/// **DEATH**, in [`Entities::deallocate`]. Therefore [`Entities::is_alive`] needs
 /// only the generation check and never consults `free`.
 ///
 /// `free` is LIFO and purely an allocation-reuse structure.

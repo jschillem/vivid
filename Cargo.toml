@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 bytemuck = "1.25"
+glam = { version = "0.33", features = ["bytemuck"] }
 log = { version = "0.4", features = [
     "max_level_trace",
     "release_max_level_debug",
