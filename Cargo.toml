@@ -8,6 +8,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+approx = "0.5"
 bytemuck = "1.25"
 glam = { version = "0.33", features = ["bytemuck"] }
 log = { version = "0.4", features = [
@@ -15,6 +16,7 @@ log = { version = "0.4", features = [
     "release_max_level_debug",
 ] }
 thiserror = "2"
+winit = "0.30"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

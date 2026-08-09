@@ -2,6 +2,7 @@
 
 mod entity;
 mod pool;
+mod time;
 mod world;
 
 // Re-exported because `glam` types throughout the `vivid` API.
