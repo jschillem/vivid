@@ -18,7 +18,7 @@ impl TickRate {
     ///
     /// # Panics
     /// If `hz` is zero.
-    pub fn new(hz: u32) -> Self {
+    fn new(hz: u32) -> Self {
         assert!(hz > 0, "tick rate must be non-zero");
         let duration = Duration::from_secs(1) / hz;
         Self {
@@ -28,12 +28,12 @@ impl TickRate {
     }
 
     #[inline]
-    pub const fn duration(&self) -> Duration {
+    const fn duration(&self) -> Duration {
         self.duration
     }
 
     #[inline]
-    pub const fn seconds(&self) -> f32 {
+    const fn seconds(&self) -> f32 {
         self.seconds
     }
 }

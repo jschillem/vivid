@@ -1,7 +1,4 @@
-use std::mem;
-
 use log::trace;
-
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
 
@@ -15,7 +12,7 @@ macro_rules! define_keys {
             pub const COUNT: usize = [$(Key::$name),*].len();
 
             /// Boundary translation. [`None`] = "vivid doesn't track this key".
-            pub fn from_winit(code: KeyCode) -> Option<Key> {
+            pub const fn from_winit(code: KeyCode) -> Option<Key> {
                 match code {
                     $(KeyCode::$name => Some(Key::$name),)*
                     _ => None,
@@ -127,8 +124,7 @@ mod tests {
 
     #[test]
     fn count_fits_storage() {
-        assert!(Key::COUNT <= 64 * Key::COUNT.div_ceil(64));
-        assert!(Key::COUNT > 0);
+        assert!(Key::COUNT > 0 && (Key::COUNT <= 64 * Key::COUNT.div_ceil(64)));
     }
 
     #[test]

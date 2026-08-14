@@ -10,13 +10,20 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 approx = "0.5"
 bytemuck = "1.25"
+env_logger = "0.11"
 glam = { version = "0.33", features = ["bytemuck"] }
 log = { version = "0.4", features = [
     "max_level_trace",
     "release_max_level_debug",
 ] }
+pollster = "1"
 thiserror = "2"
+wgpu = "30"
 winit = "0.30"
+
+vivid-core = { path = "./crates/vivid-core/" }
+vivid-platform = { path = "./crates/vivid-platform/" }
+vivid-render = { path = "./crates/vivid-render/" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
