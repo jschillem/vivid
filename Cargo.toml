@@ -17,6 +17,7 @@ log = { version = "0.4", features = [
     "release_max_level_debug",
 ] }
 pollster = "1"
+rustc-hash = "2"
 thiserror = "2"
 wgpu = "30"
 winit = "0.30"

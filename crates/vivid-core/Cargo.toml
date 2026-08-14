@@ -7,6 +7,9 @@ license.workspace = true
 [dependencies]
 glam = { workspace = true, features = ["bytemuck"] }
 log.workspace = true
+rustc-hash.workspace = true
+
+vivid-derive = { path = "../vivid-derive" }
 
 [dev-dependencies]
 approx.workspace = true
