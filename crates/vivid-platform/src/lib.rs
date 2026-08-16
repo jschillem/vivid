@@ -12,10 +12,10 @@ use winit::{
     window::{Window, WindowId},
 };
 
-pub use input::{Key, KeyboardInput};
+pub use kb_input::{Key, KeyboardInput};
 pub use winit;
 
-mod input;
+mod kb_input;
 
 #[derive(Debug, Error)]
 pub enum PlatformError {
@@ -123,7 +123,7 @@ impl Platform {
         !(matches!(status, PumpStatus::Exit(_)) || self.handler.close_requested)
     }
 
-    pub fn input(&self) -> &KeyboardInput {
+    pub fn kb_input(&self) -> &KeyboardInput {
         &self.handler.kb_input
     }
 

@@ -1,13 +1,13 @@
 use log::{debug, info, trace};
 use pollster::FutureExt;
 use thiserror::Error;
-use vivid_core::glam::Vec2;
+use vivid_core::glam::{Vec2, Vec3};
 use wgpu::util::DeviceExt;
 
 use crate::{
     buffer::GpuVec,
     camera::Camera,
-    vertex::{Instance, QUAD, QUAD_INDICES, Vertex},
+    vertex::{Instance, Vertex},
 };
 
 const INITIAL_INSTANCE_CAPACITY: u64 = 64;
@@ -60,6 +60,7 @@ pub struct Renderer<'window> {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    index_count: u32,
     instances: GpuVec<Instance>,
     pub camera: Camera,
     pub clear_color: wgpu::Color,
@@ -177,17 +178,21 @@ impl<'window> Renderer<'window> {
             cache: None,
         });
 
+        let (vertices, indices) = crate::vertex::cube();
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("quad-vertices"),
-            contents: bytemuck::cast_slice(QUAD),
+            contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("quad-indices"),
-            contents: bytemuck::cast_slice(QUAD_INDICES),
+            contents: bytemuck::cast_slice(&indices),
             usage: wgpu::BufferUsages::INDEX,
         });
+
+        let index_count = u32::try_from(indices.len()).expect("index count fits u32");
 
         let instances = GpuVec::new(
             &device,
@@ -205,6 +210,7 @@ impl<'window> Renderer<'window> {
             pipeline,
             vertex_buffer,
             index_buffer,
+            index_count,
             instances,
             camera,
             clear_color: wgpu::Color {
@@ -232,7 +238,14 @@ impl<'window> Renderer<'window> {
         trace!("surface configured at {width}x{height}");
     }
 
-    pub fn render(&mut self, quads: &[Vec2]) -> Result<(), RenderError> {
+    pub fn ensure_size(&mut self, width: u32, height: u32) {
+        if self.configured && width == self.config.width && height == self.config.height {
+            return;
+        }
+        self.resize(width, height);
+    }
+
+    pub fn render(&mut self, cubes: &[Vec3]) -> Result<(), RenderError> {
         if !self.configured {
             return Ok(());
         }
@@ -267,7 +280,7 @@ impl<'window> Renderer<'window> {
         );
 
         self.instances
-            .write(&self.device, &self.queue, bytemuck::cast_slice(quads));
+            .write(&self.device, &self.queue, bytemuck::cast_slice(cubes));
 
         let mut encoder =
             self.device
@@ -298,7 +311,7 @@ impl<'window> Renderer<'window> {
             pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             pass.set_vertex_buffer(1, self.instances.slice(..));
             pass.set_bind_group(0, self.camera.bind_group(), &[]);
-            pass.draw_indexed(0..6, 0, 0..self.instances.len());
+            pass.draw_indexed(0..self.index_count, 0, 0..self.instances.len());
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

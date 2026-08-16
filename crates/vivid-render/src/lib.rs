@@ -5,3 +5,4 @@ mod vertex;
 
 pub use camera::Camera;
 pub use renderer::{RenderError, Renderer};
+pub use wgpu;

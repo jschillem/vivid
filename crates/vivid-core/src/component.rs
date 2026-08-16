@@ -60,6 +60,10 @@ impl Components {
     pub(crate) fn len(&self) -> usize {
         self.names.len()
     }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
 }
 
 /// Object-safe view of [`Pool<T>`], letting the world hold heterogeneous pools

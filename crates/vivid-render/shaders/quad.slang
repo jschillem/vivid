@@ -3,15 +3,17 @@ struct Camera {
 }
 
 struct VertexInput {
-  float2 position;
+  float3 position;
+  float3 normal;
 }
 
 struct InstanceInput {
-  float2 offset;
+  float3 offset;
 }
 
 struct VertexOutput {
   float4 position : SV_Position;
+  float3 normal;
 }
 
 ConstantBuffer<Camera> camera;
@@ -20,7 +22,7 @@ ConstantBuffer<Camera> camera;
 VertexOutput vs_main(VertexInput vert, InstanceInput inst) {
   let world = vert.position + inst.offset;
   VertexOutput output;
-  output.position = mul(camera.view_proj, float4(world, 0.0, 1.0));
+  output.position = mul(camera.view_proj, float4(world, 1.0));
   return output;
 }
 

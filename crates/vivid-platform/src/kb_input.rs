@@ -77,6 +77,12 @@ impl KeySet {
     const fn clear(&mut self) {
         self.words = [0; Key::COUNT.div_ceil(64)];
     }
+
+    fn union(&mut self, other: &Self) {
+        for (a, b) in self.words.iter_mut().zip(other.words.iter()) {
+            *a |= *b;
+        }
+    }
 }
 
 /// The state of the keyboard.
@@ -115,6 +121,19 @@ impl KeyboardInput {
                 trace!("key released: {key:?}");
             }
         }
+    }
+
+    /// OR another frame's key state into this one. Used by the engine to
+    /// accumulate presses across pumps that ran no simulation tick, so an
+    /// edge-triggered input is never silently dropped.
+    pub fn merge(&mut self, other: &Self) {
+        self.held = other.held;
+        self.pressed.union(&other.pressed);
+    }
+
+    /// Drop accumulated press edges, keeping current held state.
+    pub fn clear_presses(&mut self) {
+        self.pressed.clear();
     }
 }
 

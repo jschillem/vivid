@@ -14,7 +14,22 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 
     quote! {
         #[automatically_derived]
-        impl #impl_generics ::vivid_core::Component for #name #ty_generics #where_clause {}
+        impl #impl_generics ::vivid::core::Component for #name #ty_generics #where_clause {}
+    }
+    .into()
+}
+
+/// Implements the marker trait `vivid_core::Event`.
+#[proc_macro_derive(Event)]
+pub fn derive_event(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    quote! {
+        #[automatically_derived]
+        impl #impl_generics ::vivid::core::Event for #name #ty_generics #where_clause {}
     }
     .into()
 }

@@ -1,16 +1,16 @@
 [package]
-name = "sandbox"
+name = "vivid"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-env_logger.workspace = true
 log.workspace = true
-rand = "0.10"
+thiserror.workspace = true
 
-vivid = { path = "../crates/vivid" }
-
+vivid-core.workspace = true
+vivid-platform.workspace = true
+vivid-render.workspace = true
 
 [lints]
 workspace = true

@@ -1,101 +1,97 @@
-//! Sandbox: disposable proving ground. Exempt from crates/ quality standards.
-
-use std::sync::Arc;
-
+use env_logger::Env;
 use log::info;
 use rand::RngExt;
-use vivid_core::glam::Vec2;
-use vivid_core::{Clock, Position, Velocity, World};
-use vivid_platform::{Key, Platform};
-use vivid_render::Renderer;
+use vivid::{Component, Engine, Key, Position, glam::Vec3};
 
-/// First real system. Note the disjoint-borrow destructure: iterating
-/// `world.velocities` while calling `world.positions.get_mut` through `world`
-/// itself would be rejected — splitting the borrows at the field level is the
-/// pattern every system uses.
-fn integrate(world: &mut World, dt: f32) {
-    let World {
-        positions,
-        velocities,
-        ..
-    } = world;
+#[derive(Debug, Component)]
+struct Velocity(Vec3);
 
-    for (e, vel) in velocities.iter() {
-        if let Some(pos) = positions.get_mut(e) {
-            pos.prev = pos.curr;
-            pos.curr += vel.0 * dt;
-        }
-    }
-}
+const HALF: f32 = 18.0;
+const ENTITY_COUNT: usize = 50;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let mut rng: rand::rngs::StdRng = rand::make_rng();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let mut platform = Platform::new("vivid sandbox")?;
-    let mut world = World::new();
+    let mut engine = Engine::new("vivid sandbox")?;
+    engine.camera().height = HALF * 2.2;
 
-    for i in 0u8..5 {
-        let e = world.spawn();
-        world.positions.insert(e, Position::at(Vec2::ZERO));
-        let vx = rng.random_range(-2.0f32..2.0f32);
-        let vy = rng.random_range(-1.0f32..1.0f32);
-        world.velocities.insert(e, Velocity(Vec2::new(vx, vy)));
+    // Deterministic-ish spawn: swap to `rand::rngs::StdRng::seed_from_u64(..)`
+    // if you want two runs to be byte-identical for comparison.
+    let mut rng = rand::rng();
+    for _ in 0..ENTITY_COUNT {
+        let e = engine.world.spawn();
+        let pos = Vec3::new(
+            rng.random_range(-HALF..HALF),
+            rng.random_range(-HALF..HALF),
+            rng.random_range(-2.0..2.0), // slight depth spread
+        );
+        let vel = Vec3::new(
+            rng.random_range(-6.0..6.0),
+            rng.random_range(-6.0..6.0),
+            0.0, // keep z still for now
+        );
+        engine.world.insert(e, Position::at(pos));
+        engine.world.insert(e, Velocity(vel));
     }
+    info!("spawned {ENTITY_COUNT} entities");
 
-    let mut clock = Clock::new(128);
-    let mut tick_count: u64 = 0;
-    let mut renderer = None;
-    let mut quads: Vec<Vec2> = Vec::new();
-
-    while platform.pump() {
-        if renderer.is_none()
-            && let Some(window) = platform.window()
-        {
-            let size = window.inner_size();
-            renderer = Some(Renderer::new(Arc::clone(window), size.width, size.height)?);
-        }
-
-        if let (Some(r), Some(size)) = (renderer.as_mut(), platform.resized()) {
-            r.resize(size.width, size.height);
-        }
-
-        if platform.input().pressed(Key::Escape) {
-            info!("escape pressed, exiting");
-            break;
-        }
-
-        // SIM stage: fixed ticks. Gameplay, physics, (eventually) Lua update.
-        for _ in 0..clock.advance() {
-            integrate(&mut world, clock.tick_seconds());
-            tick_count += 1;
-
-            // Heartbeat: once per simulated second, prove things move.
-            if tick_count.is_multiple_of(64)
-                && let Some((e, pos)) = world.positions.iter().next()
-            {
-                info!("t={}s {e:?} at {:?}", tick_count / 60, pos.curr);
+    engine.on_tick("integrate", |ctx| {
+        let mut positions = ctx.world.pool_mut::<Position>();
+        let velocities = ctx.world.pool::<Velocity>();
+        for (e, vel) in velocities.iter() {
+            if let Some(p) = positions.get_mut(e) {
+                p.prev = p.curr;
+                p.curr += vel.0 * ctx.delta_time;
             }
         }
+    });
 
-        // FRAME stage: runs once per render frame with the true frame delta.
-        // Camera smoothing, cosmetic particles, UI animation live here —
-        // nothing that can affect simulation outcome.
-        let _frame_dt = clock.frame_seconds();
-        let alpha = clock.alpha();
-        quads.clear();
-
-        for (_, pos) in &world.positions {
-            quads.push(pos.prev.lerp(pos.curr, alpha));
+    // Wrapping is a TELEPORT: prev must follow curr, or the quad interpolates
+    // across the whole screen for one frame (a visible streak).
+    engine.on_tick("wrap", |ctx| {
+        let mut positions = ctx.world.pool_mut::<Position>();
+        for (_, p) in positions.iter_mut() {
+            let mut wrapped = p.curr;
+            if wrapped.x > HALF {
+                wrapped.x = -HALF;
+            } else if wrapped.x < -HALF {
+                wrapped.x = HALF;
+            }
+            if wrapped.y > HALF {
+                wrapped.y = -HALF;
+            } else if wrapped.y < -HALF {
+                wrapped.y = HALF;
+            }
+            if wrapped != p.curr {
+                p.teleport(wrapped);
+            }
         }
+    });
 
-        if let Some(r) = renderer.as_mut()
-            && let Err(e) = r.render(&quads)
-        {
-            log::error!("render failed: {e}");
+    engine.on_tick("quit_on_escape", |ctx| {
+        if ctx.input.pressed(Key::Escape) {
+            ctx.request_quit();
         }
-    }
+    });
 
-    info!("shutting down after {tick_count} ticks");
+    // Frame stage: presentation only. A system may own state across runs
+    // (FnMut), which is how this accumulates without touching the World.
+    let mut elapsed = 0.0f32;
+    let mut frames = 0u32;
+    engine.on_frame("stats", move |ctx| {
+        elapsed += ctx.delta_time;
+        frames += 1;
+        if elapsed >= 1.0 {
+            info!(
+                "{frames} fps | {:.2} ms/frame | alpha {:.2}",
+                elapsed * 1000.0 / frames as f32,
+                ctx.alpha
+            );
+            elapsed = 0.0;
+            frames = 0;
+        }
+    });
+
+    while engine.frame() {}
     Ok(())
 }

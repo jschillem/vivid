@@ -69,9 +69,8 @@ impl Camera {
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
-    pub fn world_to_clip(&self, point: Vec2, aspect: f32) -> Vec2 {
-        let clip = view_proj(self.center, self.height, aspect)
-            .transform_point3(Vec3::new(point.x, point.y, 0.0));
+    pub fn world_to_clip(&self, point: Vec3, aspect: f32) -> Vec2 {
+        let clip = view_proj(self.center, self.height, aspect).transform_point3(point);
 
         Vec2::new(clip.x, clip.y)
     }
@@ -92,8 +91,8 @@ fn view_proj(center: Vec2, height: f32, aspect: f32) -> Mat4 {
         center.x + half_w,
         center.y - half_h,
         center.y + half_h,
-        -1.0,
-        1.0,
+        -100.0,
+        100.0,
     )
 }
 

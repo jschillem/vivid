@@ -4,10 +4,10 @@ use std::fmt;
 
 use log::trace;
 
-use crate::component::{Components, ErasedPool, PoolMut, PoolRef};
+use crate::component::{Component, ComponentId, Components, ErasedPool, PoolMut, PoolRef};
 use crate::entity::{Entities, Entity};
+use crate::event::{ErasedEvents, Event, EventId, EventTypes, Events, EventsMut, EventsRef};
 use crate::pool::Pool;
-use crate::{Component, ComponentId};
 
 /// The game state.
 ///
@@ -19,6 +19,9 @@ pub struct World {
     components: Components,
     /// component pools, index by [`ComponentId`].
     pools: Vec<Option<RefCell<Box<dyn ErasedPool>>>>,
+    event_types: EventTypes,
+    /// Event queues, index by [`EventId`].
+    event_queues: Vec<Option<RefCell<Box<dyn ErasedEvents>>>>,
 }
 
 impl World {
@@ -146,9 +149,99 @@ impl World {
         self.try_pool::<T>()?.get(e).copied()
     }
 
+    pub fn register_event<T: Event>(&mut self) -> EventId {
+        let id = self.event_types.get_or_insert::<T>();
+        if self.event_queues.len() <= id.index() {
+            self.event_queues.resize_with(id.index() + 1, || None);
+        }
+
+        if self.event_queues[id.index()].is_none() {
+            trace!("creating queue for {}", type_name::<T>());
+            self.event_queues[id.index()] = Some(RefCell::new(
+                Box::new(Events::<T>::new()) as Box<dyn ErasedEvents>
+            ));
+        }
+        id
+    }
+
+    pub fn is_event_registered<T: Event>(&self) -> bool {
+        self.queue_slot::<T>().is_some()
+    }
+
+    pub fn registered_event_count(&self) -> usize {
+        self.event_types.len()
+    }
+
+    /// Exclusive borrow of `T`'s queue, for sending.
+    ///
+    /// # Panics
+    /// If `T` was never registered, or its queue is already borrowed.
+    pub fn events_mut<T: Event>(&self) -> EventsMut<'_, T> {
+        self.try_events_mut::<T>()
+            .unwrap_or_else(|| panic!("event {} is not registered", type_name::<T>()))
+    }
+
+    /// Shared borrow of `T`'s queue, for reading last tick's events.
+    ///
+    /// # Panics
+    /// If `T` was never registered, or its queue is borrowed mutably.
+    pub fn events<T: Event>(&self) -> EventsRef<'_, T> {
+        self.try_events::<T>()
+            .unwrap_or_else(|| panic!("event {} is not registered", type_name::<T>()))
+    }
+
+    /// `None` when `T` is unregistered. Panics on a conflicting borrow.
+    pub fn try_events_mut<T: Event>(&self) -> Option<EventsMut<'_, T>> {
+        let cell = self.queue_slot::<T>()?;
+        Some(EventsMut::new(cell.try_borrow_mut().unwrap_or_else(|_| {
+            panic!("event {} queue already borrowed", type_name::<T>())
+        })))
+    }
+
+    /// `None` when `T` is unregistered. Panics on a conflicting borrow.
+    pub fn try_events<T: Event>(&self) -> Option<EventsRef<'_, T>> {
+        let cell = self.queue_slot::<T>()?;
+        Some(EventsRef::new(cell.try_borrow().unwrap_or_else(|_| {
+            panic!("event {} queue already mutably borrowed", type_name::<T>())
+        })))
+    }
+
+    /// Convenience send, registering `T` on first use. Systems holding
+    /// `&World` should use [`World::events_mut`] instead; this exists for
+    /// setup code and one-off sends that already hold `&mut World`.
+    pub fn send<T: Event>(&mut self, event: T) {
+        self.register_event::<T>();
+        self.events_mut::<T>().send(event);
+    }
+
+    /// Retire last tick's events and promote this tick's sends.
+    ///
+    /// The engine calls this ONCE per tick, after the tick schedule has run.
+    /// Games driving their own loop must call it themselves or events will
+    /// never become readable.
+    pub fn swap_events(&mut self) {
+        for slot in self.event_queues.iter_mut().flatten() {
+            // get_mut: `&mut self` proves exclusivity — no runtime check.
+            slot.get_mut().swap();
+        }
+    }
+
+    /// Drop every queued and readable event. For hard state resets
+    /// (level change, load) where last tick's events must not leak across.
+    pub fn clear_events(&mut self) {
+        for slot in self.event_queues.iter_mut().flatten() {
+            slot.get_mut().clear();
+        }
+    }
+
     fn slot<T: Component>(&self) -> Option<&RefCell<Box<dyn ErasedPool>>> {
         let id = self.components.get::<T>()?;
         self.pools.get(id.index())?.as_ref()
+    }
+
+    fn queue_slot<T: Event>(&self) -> Option<&RefCell<Box<dyn ErasedEvents>>> {
+        let id = self.event_types.get::<T>()?;
+        self.event_queues.get(id.index())?.as_ref()
     }
 }
 
@@ -157,6 +250,7 @@ impl fmt::Debug for World {
         f.debug_struct("World")
             .field("alive_entities", &self.entities.alive_count())
             .field("components", &self.components.len())
+            .field("events", &self.event_types.len())
             .finish_non_exhaustive()
     }
 }
@@ -271,5 +365,81 @@ mod tests {
 
         assert_eq!(world.get::<Health>(b), Some(Health(2)));
         assert_eq!(world.pool::<Health>().len(), 1);
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct Damaged(u32);
+    impl Event for Damaged {}
+
+    #[test]
+    fn events_become_readable_after_swap() {
+        let mut world = World::new();
+        world.send(Damaged(7));
+
+        assert!(world.events::<Damaged>().is_empty(), "not readable yet");
+        world.swap_events();
+        assert_eq!(world.events::<Damaged>().read().next(), Some(&Damaged(7)));
+    }
+
+    #[test]
+    fn events_expire_after_one_tick() {
+        let mut world = World::new();
+        world.send(Damaged(1));
+        world.swap_events();
+        assert_eq!(world.events::<Damaged>().len(), 1);
+
+        world.swap_events();
+        assert!(world.events::<Damaged>().is_empty());
+    }
+
+    #[test]
+    fn send_through_shared_borrow_like_a_system() {
+        let mut world = World::new();
+        world.register_event::<Damaged>();
+
+        // What a system does: it only has &World.
+        {
+            let world: &World = &world;
+            world.events_mut::<Damaged>().send(Damaged(3));
+        }
+
+        world.swap_events();
+        assert_eq!(world.events::<Damaged>().len(), 1);
+    }
+
+    #[test]
+    fn pools_and_events_borrow_simultaneously() {
+        let mut world = World::new();
+        let e = world.spawn();
+        world.insert(e, Health(10));
+        world.register_event::<Damaged>();
+
+        let health = world.pool::<Health>();
+        let mut damaged = world.events_mut::<Damaged>();
+        damaged.send(Damaged(health.get(e).unwrap().0));
+
+        drop(damaged);
+        drop(health);
+        world.swap_events();
+        assert_eq!(world.events::<Damaged>().read().next(), Some(&Damaged(10)));
+    }
+
+    #[test]
+    #[should_panic(expected = "is not registered")]
+    fn unregistered_event_read_panics() {
+        let world = World::new();
+        let _ = world.events::<Damaged>();
+    }
+
+    #[test]
+    fn clear_events_drops_both_buffers() {
+        let mut world = World::new();
+        world.send(Damaged(1));
+        world.swap_events();
+        world.send(Damaged(2));
+
+        world.clear_events();
+        world.swap_events();
+        assert!(world.events::<Damaged>().is_empty());
     }
 }
